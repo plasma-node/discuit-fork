@@ -10,7 +10,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
-	"strconv"
+	// "strconv"
 	"strings"
 	"time"
 
@@ -1441,71 +1441,50 @@ type CommentsCursor struct {
 }
 
 // GetComments populates c.Comments and returns the next comment's cursor.
-func (p *Post) GetComments(ctx context.Context, viewer *uid.ID, cursor *CommentsCursor) (*CommentsCursor, error) {
-	var args []any
-	where := "WHERE comments.post_id = ? "
-	args = append(args, p.ID)
-	if cursor != nil {
-		where += "AND (comments.upvotes, comments.id) <= (?, ?) "
-		args = append(args, cursor.Upvotes, cursor.NextID)
-	}
-	where += "ORDER BY upvotes DESC, comments.id DESC LIMIT ?"
-	args = append(args, commentsFetchLimit+1)
+func (p *Post) GetComments(ctx context.Context, viewer *uid.ID, cursor *CommentsCursor, sort string) (*CommentsCursor, error) {
+    var orderBy string
+    switch sort {
+    case "new":
+        orderBy = "created_at DESC"
+    case "controversial":
+        orderBy = "downvotes DESC, upvotes ASC"
+    case "top":
+        orderBy = "upvotes DESC"
+    default:
+        orderBy = "upvotes DESC"
+    }
 
-	all, err := getComments(ctx, p.db, viewer, where, args...)
-	if err != nil {
-		return nil, err
-	}
+    where := "WHERE post_id = ? AND depth = 0"
+    args := []interface{}{p.ID}
+    if cursor != nil {
+        where += " AND (upvotes < ? OR (upvotes = ? AND id < ?))"
+        args = append(args, cursor.Upvotes, cursor.Upvotes, cursor.NextID)
+    }
 
-	comments := all
+    query := buildSelectCommentsQuery(viewer != nil, where) + " ORDER BY " + orderBy + " LIMIT ?"
+    args = append(args, commentsFetchLimit+1)
 
-	var nextCursor *CommentsCursor
-	if len(all) >= commentsFetchLimit+1 {
-		nextCursor = new(CommentsCursor)
-		nextCursor.Upvotes = all[commentsFetchLimit].Upvotes
-		nextCursor.NextID = all[commentsFetchLimit].ID
-		comments = all[:commentsFetchLimit]
-	}
-	p.Comments = comments
+    rows, err := p.db.QueryContext(ctx, query, args...)
+    if err != nil {
+        return nil, err
+    }
 
-	ids := make(map[uid.ID]bool)
-	for _, c := range p.Comments {
-		ids[c.ID] = true
-	}
+    comments, err := scanComments(ctx, p.db, rows, viewer)
+    if err != nil {
+        return nil, err
+    }
 
-	var orphans []*Comment
-	for _, c := range p.Comments {
-		if c.ParentID.Valid {
-			if _, ok := ids[c.ParentID.ID]; !ok {
-				orphans = append(orphans, c)
-			}
-		}
-	}
+    if len(comments) > commentsFetchLimit {
+        comments = comments[:commentsFetchLimit]
+        nextCursor := &CommentsCursor{
+            Upvotes: comments[len(comments)-1].Upvotes,
+            NextID:  comments[len(comments)-1].ID,
+        }
+        return nextCursor, nil
+    }
 
-	var toGet []uid.ID
-	for _, c := range orphans {
-		for _, a := range c.Ancestors {
-			if _, ok := ids[a]; !ok {
-				ids[a] = true
-				toGet = append(toGet, a)
-			}
-		}
-	}
-
-	if len(toGet) > 0 {
-		c2, err := GetCommentsByIDs(ctx, p.db, viewer, toGet...)
-		if err != nil {
-			return nil, err
-		}
-		p.Comments = append(p.Comments, c2...)
-	}
-
-	if nextCursor != nil {
-		p.CommentsNext.String = strconv.Itoa(nextCursor.Upvotes) + "." + nextCursor.NextID.String()
-		p.CommentsNext.Valid = true
-	}
-
-	return nextCursor, nil
+    p.Comments = comments
+    return nil, nil
 }
 
 // GetCommentReplies returns all the replies of comment.

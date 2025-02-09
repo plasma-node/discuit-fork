@@ -11,57 +11,58 @@ import (
 
 // /api/posts/:postID/comments [GET]
 func (s *Server) getPostComments(w *responseWriter, r *request) error {
-	post, err := core.GetPost(r.ctx, s.db, nil, r.muxVar("postID"), r.viewer, true)
-	if err != nil {
-		return err
-	}
+    post, err := core.GetPost(r.ctx, s.db, nil, r.muxVar("postID"), r.viewer, true)
+    if err != nil {
+        return err
+    }
 
-	query := r.urlQueryParams()
+    query := r.urlQueryParams()
 
-	// Reply comments.
-	parentIDText := query.Get("parentId")
-	if parentIDText != "" {
-		parentID, err := strToID(parentIDText)
-		if err != nil {
-			return err
-		}
-		comments, err := post.GetCommentReplies(r.ctx, r.viewer, parentID)
-		if err != nil {
-			return err
-		}
-		return w.writeJSON(comments)
-	}
+    // Reply comments.
+    parentIDText := query.Get("parentId")
+    if parentIDText != "" {
+        parentID, err := strToID(parentIDText)
+        if err != nil {
+            return err
+        }
+        comments, err := post.GetCommentReplies(r.ctx, r.viewer, parentID)
+        if err != nil {
+            return err
+        }
+        return w.writeJSON(comments)
+    }
 
-	var (
-		nextText   = query.Get("next")
-		nextPoints int
-		nextID     *uid.ID
-	)
-	if nextText != "" {
-		if nextPoints, nextID, err = core.NextPointsIDCursor(nextText); err != nil {
-			return core.ErrInvalidFeedCursor
-		}
-	}
-	var cursor *core.CommentsCursor
-	if nextID != nil {
-		cursor = new(core.CommentsCursor)
-		cursor.Upvotes = nextPoints
-		cursor.NextID = *nextID
-	}
+    var (
+        nextText   = query.Get("next")
+        nextPoints int
+        nextID     *uid.ID
+        sort       = query.Get("sort")
+    )
+    if nextText != "" {
+        if nextPoints, nextID, err = core.NextPointsIDCursor(nextText); err != nil {
+            return core.ErrInvalidFeedCursor
+        }
+    }
+    var cursor *core.CommentsCursor
+    if nextID != nil {
+        cursor = new(core.CommentsCursor)
+        cursor.Upvotes = nextPoints
+        cursor.NextID = *nextID
+    }
 
-	if _, err = post.GetComments(r.ctx, r.viewer, cursor); err != nil {
-		return err
-	}
+    if _, err = post.GetComments(r.ctx, r.viewer, cursor, sort); err != nil {
+        return err
+    }
 
-	res := struct {
-		Comments []*core.Comment `json:"comments"`
-		Next     msql.NullString `json:"next"`
-	}{
-		Comments: post.Comments,
-		Next:     post.CommentsNext,
-	}
+    res := struct {
+        Comments []*core.Comment `json:"comments"`
+        Next     msql.NullString `json:"next"`
+    }{
+        Comments: post.Comments,
+        Next:     post.CommentsNext,
+    }
 
-	return w.writeJSON(res)
+    return w.writeJSON(res)
 }
 
 // /api/:commentID [GET]

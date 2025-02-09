@@ -8,7 +8,7 @@ go build
 
 # Build the React app
 cd ui
-npm ci
+# npm ci # Re enable for clean prod builds
 npm run build
 cd ..
 

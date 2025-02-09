@@ -30,13 +30,20 @@ import PostCardHeadingDetails from '../../components/PostCard/PostCardHeadingDet
 import PostImageGallery from '../../components/PostImageGallery';
 import Spinner from '../../components/Spinner';
 import { ExternalLink, LinkOrDiv } from '../../components/Utils';
-import { commentsAdded, newCommentAdded } from '../../slices/commentsSlice';
+import { commentsAdded, newCommentAdded, commentsLoaded } from '../../slices/commentsSlice';
 import { communityAdded } from '../../slices/communitiesSlice';
 import { postAdded } from '../../slices/postsSlice';
 import { SVGExternalLink } from '../../SVGs';
 import CommunityCard from './CommunityCard';
 import PostImage from './PostImage';
 import PostVotesBar from './PostVotesBar';
+import SelectBar from '../../components/SelectBar';
+
+const sortOptions = [
+  { text: 'Top', id: 'top' },
+  { text: 'New', id: 'new' },
+  { text: 'Controversial', id: 'controversial' },
+];
 
 const Post = () => {
   const { id, commentId, communityName } = useParams(); // id is post.publicId
@@ -71,6 +78,28 @@ const Post = () => {
   const [commentsLoading, setCommentsLoading] = useState(
     shouldCommentsLoad() ? 'loading' : 'loaded'
   );
+
+
+  const [sort, setSort] = useState('top');
+
+  const handleSortChange = (value) => {
+    setSort(value);
+    fetchComments(value);
+  };
+
+  const fetchComments = async (sort) => {
+    setCommentsLoading('loading');
+    const res = await mfetchjson(`/api/posts/${id}/comments?sort=${sort}`);
+    dispatch(commentsLoaded({ postId: id, comments: res.comments }));
+    setCommentsLoading('loaded');
+  };
+
+  useEffect(() => {
+    if (shouldCommentsLoad()) {
+      fetchComments(sort);
+    }
+  }, [id, sort]);
+
   const [communityLoading, setCommunityLoading] = useState(community ? 'loaded' : 'loading');
   useEffect(() => {
     if (post && !shouldCommentsLoad() && community && !fromNotifications) {
@@ -212,8 +241,7 @@ const Post = () => {
     (async () => {
       try {
         const res = await mfetch(
-          `/api/posts/${post.publicId}?action=${checked ? 'pin' : 'unpin'}&siteWide=${
-            siteWide ? 'true' : 'false'
+          `/api/posts/${post.publicId}?action=${checked ? 'pin' : 'unpin'}&siteWide=${siteWide ? 'true' : 'false'
           }`,
           { method: 'PUT' }
         );
@@ -287,22 +315,20 @@ const Post = () => {
   const getDeletedBannerText = (post) => {
     if (post.deletedContent) {
       if (post.deletedAs === post.deletedContentAs) {
-        return `This post and its ${
-          post.type === 'image' ? 'image(s)' : post.type
-        } have been removed by ${userGroupSingular(post.deletedAs, true)}.`;
+        return `This post and its ${post.type === 'image' ? 'image(s)' : post.type
+          } have been removed by ${userGroupSingular(post.deletedAs, true)}.`;
       } else {
-        return `This post has been removed by ${userGroupSingular(post.deletedAs, true)} and its ${
-          post.type
-        } has been removed
+        return `This post has been removed by ${userGroupSingular(post.deletedAs, true)} and its ${post.type
+          } has been removed
         by ${userGroupSingular(post.deletedContentAs, true)}.`;
       }
     }
     return `This post has been removed by ${userGroupSingular(post.deletedAs, true)}.`;
   };
 
-  const deletePostContentButtonText = `Delete ${
-    post.type === 'image' ? (post.images.length > 1 ? 'images' : 'image') : post.type
-  }`;
+  const deletePostContentButtonText = `Delete ${post.type === 'image' ? (post.images.length > 1 ? 'images' : 'image') : post.type
+    }`;
+
 
   return (
     <div className="page-content page-post wrap">
@@ -569,6 +595,7 @@ const Post = () => {
                 <div className="post-comments-count">
                   {stringCount(post.noComments, false, 'comment')}
                 </div>
+                <SelectBar name="Sort" options={sortOptions} value={sort} onChange={handleSortChange} />
               </div>
               {/* <CommentsSortButton /> */}
               <AddComment

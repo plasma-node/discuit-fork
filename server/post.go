@@ -94,31 +94,32 @@ func (s *Server) addPost(w *responseWriter, r *request) error {
 
 // /api/posts/:postID [GET]
 func (s *Server) getPost(w *responseWriter, r *request) error {
-	postID := r.muxVar("postID") // public post id
-	post, err := core.GetPost(r.ctx, s.db, nil, postID, r.viewer, true)
-	if err != nil {
-		return err
-	}
+    postID := r.muxVar("postID") // public post id
+    post, err := core.GetPost(r.ctx, s.db, nil, postID, r.viewer, true)
+    if err != nil {
+        return err
+    }
 
-	if _, err = post.GetComments(r.ctx, r.viewer, nil); err != nil {
-		return err
-	}
+    sort := r.urlQueryParams().Get("sort")
+    if _, err = post.GetComments(r.ctx, r.viewer, nil, sort); err != nil {
+        return err
+    }
 
-	if fetchCommunity := r.urlQueryParamsValue("fetchCommunity"); fetchCommunity == "" || fetchCommunity == "true" {
-		comm, err := core.GetCommunityByID(r.ctx, s.db, post.CommunityID, r.viewer)
-		if err != nil {
-			return err
-		}
-		if err = comm.FetchRules(r.ctx); err != nil {
-			return err
-		}
-		if err = comm.PopulateMods(r.ctx); err != nil {
-			return err
-		}
-		post.Community = comm
-	}
+    if fetchCommunity := r.urlQueryParamsValue("fetchCommunity"); fetchCommunity == "" || fetchCommunity == "true" {
+        comm, err := core.GetCommunityByID(r.ctx, s.db, post.CommunityID, r.viewer)
+        if err != nil {
+            return err
+        }
+        if err = comm.FetchRules(r.ctx); err != nil {
+            return err
+        }
+        if err = comm.PopulateMods(r.ctx); err != nil {
+            return err
+        }
+        post.Community = comm
+    }
 
-	return w.writeJSON(post)
+    return w.writeJSON(post)
 }
 
 // /api/posts/:postID [PUT]

@@ -3,6 +3,58 @@ import { AppDispatch, UnknownAction } from '../store';
 import { addComment, commentsTree, Node, searchTree } from './commentsTree';
 import { commentsCountIncremented } from './postsSlice';
 
+/**
+ * Builds a tree of comments, but preserves the server's
+ * top-level ordering exactly as received.
+ */
+export function commentsTreePreserveOrder(comments: Comment[]): Node {
+  // A minimal “root” pseudo-node; its children will be top-level comments.
+  const rootNode: Node = {
+    comment: null,
+    children: [],
+    parent: null,
+    noRepliesRendered: 0,
+    collapsed: false
+  };
+
+  // A map of commentID -> Node to help us quickly attach children
+  const nodeMap: Record<string, Node> = {};
+
+  // First, create a Node object for each comment in the order received
+  // and insert into nodeMap.
+  for (const c of comments) {
+    nodeMap[c.id] = {
+      comment: c,
+      children: [],
+      parent: null,
+      noRepliesRendered: 0,
+      collapsed: false,
+    };
+  }
+
+  // Now attach children to their parents, if any
+  for (const c of comments) {
+    const node = nodeMap[c.id];
+    if (c.parentId) {
+      const parentNode = nodeMap[c.parentId];
+      if (parentNode) {
+        node.parent = parentNode;
+        parentNode.children?.push(node);
+      } else {
+        // If the parent wasn't found, treat it as top-level to avoid losing data
+        rootNode.children?.push(node);
+        node.parent = rootNode;
+      }
+    } else {
+      // No parent (top-level comment), so attach directly under root
+      rootNode.children?.push(node);
+      node.parent = rootNode;
+    }
+  }
+
+  return rootNode;
+}
+
 export interface CommentsState {
   ids: string[];
   items: {
@@ -37,6 +89,7 @@ const typeCommentsAdded = 'comments/commentsAdded';
 const typeNewCommentAdded = 'comments/newCommentAdded';
 const typeReplyCommentsAdded = 'comments/replyCommentsAdded';
 const typeMoreCommentsAdded = 'comments/moreCommentsAdded';
+const typeCommentsLoaded = 'comments/commentsLoaded';
 
 export default function commentsReducer(
   state: CommentsState = initialState,
@@ -138,6 +191,24 @@ export default function commentsReducer(
         },
       };
     }
+    case typeCommentsLoaded: {
+      const { postId, comments } = action.payload as { postId: string; comments: Comment[] };
+
+      // Use the new function that preserves the server’s top-level order
+      const tree = commentsTreePreserveOrder(comments);
+
+      return {
+        ...state,
+        items: {
+          ...state.items,
+          [postId]: {
+            ...state.items[postId],
+            comments: tree,
+            // next, fetchedAt, etc. can still be set as you wish
+          },
+        },
+      };
+    }
     default:
       return state;
   }
@@ -171,5 +242,12 @@ export const moreCommentsAdded = (postId: string, comments: Node, next: string |
       comments,
       next,
     },
+  };
+};
+
+export const commentsLoaded = (postId: string, comments: Comment[]) => {
+  return {
+    type: typeCommentsLoaded,
+    payload: { postId, comments },
   };
 };
